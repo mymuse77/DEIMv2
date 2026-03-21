@@ -26,10 +26,16 @@ elif '0.17' > importlib.metadata.version('torchvision') >= '0.16':
 
 elif importlib.metadata.version('torchvision') >= '0.17':
     import torchvision
-    from torchvision.transforms.v2 import SanitizeBoundingBoxes
+    from torchvision.transforms.v2 import SanitizeBoundingBoxes as _SanitizeBoundingBoxes
     from torchvision.tv_tensors import (
         BoundingBoxes, BoundingBoxFormat, Mask, Image, Video)
     _boxes_keys = ['format', 'canvas_size']
+
+    # 包装器类，确保有 _transform 方法
+    class SanitizeBoundingBoxes(_SanitizeBoundingBoxes):
+        def forward(self, *inputs):
+            # 直接调用父类的 forward，它会正确处理输入
+            return super().forward(*inputs)
 
 else:
     raise RuntimeError('Please make sure torchvision version >= 0.15.2')

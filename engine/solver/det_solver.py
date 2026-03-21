@@ -25,7 +25,11 @@ class DetSolver(BaseSolver):
         self.train()
         args = self.cfg
 
-        n_parameters, model_stats = stats(self.cfg)
+        # n_parameters, model_stats = stats(self.cfg)
+        n_parameters = sum(p.numel() for p in self.model.parameters())
+        model_stats = {}
+        print(f"模型参数量: {n_parameters / 1e6:.2f}M")       
+
         print(model_stats)
         print("-"*42 + "Start training" + "-"*43)
 

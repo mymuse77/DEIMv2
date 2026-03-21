@@ -1,0 +1,63 @@
+__include__:
+  - '../dataset/helmet_detection2.yml'
+  - '../runtime.yml'
+  - '../base/deimv2.yml'
+
+output_dir: ./outputs/deimv2_hgnetv2_atto_helmet_cpu2
+
+DEIM:
+  encoder: LiteEncoder
+
+HGNetv2:
+  name: 'B0'
+  return_idx: [1, 2, 3]
+  freeze_at: -1
+  freeze_norm: False
+  use_lab: True
+
+LiteEncoder:
+  in_channels: [256, 512, 1024]
+  feat_strides: [8, 16, 32]
+  hidden_dim: 128
+  expansion: 0.34
+  depth_mult: 0.5
+  act: 'silu'
+
+DEIMTransformer:
+  feat_channels: [128, 128, 128]
+  feat_strides: [8, 16, 32]
+  hidden_dim: 128
+  num_levels: 3
+  num_points: [4, 2, 1]
+  num_layers: 3
+  eval_idx: -1
+  num_queries: 100
+  dim_feedforward: 256
+  share_bbox_head: True
+  use_gateway: False
+
+optimizer:
+  type: AdamW
+  params:
+    - params: '^(?=.*backbone)(?!.*norm|bn).*$'
+      lr: 0.0001
+    - params: '^(?=.*backbone)(?=.*norm|bn).*$'
+      lr: 0.0001
+      weight_decay: 0.
+    - params: '^(?=.*(?:encoder|decoder))(?=.*(?:norm|bn)).*$'
+      weight_decay: 0.
+  lr: 0.0004
+  betas: [0.9, 0.999]
+  weight_decay: 0.0001
+
+epoches: 100
+flat_epoch: 27
+no_aug_epoch: 8
+eval_spatial_size: [640, 640]
+
+DEIMCriterion:
+  losses: ['mal', 'boxes']
+  matcher:
+    change_matcher: True
+    iou_order_alpha: 4.0
+    matcher_change_epoch: 38

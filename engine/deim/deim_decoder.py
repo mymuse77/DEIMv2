@@ -463,8 +463,16 @@ class DEIMTransformer(nn.Module):
         if self.training or self.eval_spatial_size is None:
             anchors, valid_mask = self._generate_anchors(spatial_shapes, device=memory.device)
         else:
-            anchors = self.anchors
-            valid_mask = self.valid_mask
+            # Check if spatial_shapes match the pre-computed anchors
+            eval_h, eval_w = self.eval_spatial_size
+            expected_shapes = [[int(eval_h / s), int(eval_w / s)] for s in self.feat_strides]
+
+            # If spatial_shapes don't match, regenerate anchors
+            if spatial_shapes != expected_shapes:
+                anchors, valid_mask = self._generate_anchors(spatial_shapes, device=memory.device)
+            else:
+                anchors = self.anchors
+                valid_mask = self.valid_mask
         if memory.shape[0] > 1:
             anchors = anchors.repeat(memory.shape[0], 1, 1)
 
