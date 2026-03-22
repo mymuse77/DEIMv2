@@ -581,6 +581,13 @@ class HGNetv2(nn.Module):
                     missing_keys, unexpected_keys = self.load_state_dict(state, strict=False)
                     print("Missing keys:", missing_keys)
                     print("Unexpected keys:", unexpected_keys)
+                elif use_lab:
+                    # use_lab adds LearnableAffineBlock (lab.scale/lab.bias) not in pretrained weights
+                    missing_keys, unexpected_keys = self.load_state_dict(state, strict=False)
+                    if missing_keys:
+                        print(f"Missing keys (expected with use_lab=True): {missing_keys}")
+                    if unexpected_keys:
+                        print(f"Unexpected keys: {unexpected_keys}")
                 else:
                     self.load_state_dict(state)
 
