@@ -29,32 +29,80 @@ from PIL import Image, ImageDraw, ImageFont
 DEIMV2_ROOT = Path(__file__).resolve().parent
 
 # 模型权重（优先使用 best_stg1.pth）
-MODEL_PATH = Path(r"C:\Users\farben\Desktop\fsdownload\deimv2_hgnetv2_atto_helmet_gpu_3060\best_stg1.pth")
+# MODEL_PATH = Path(r"C:\Users\farben\Desktop\fsdownload\deimv2_hgnetv2_atto_helmet_gpu_3060\best_stg1.pth")
+# # 配置文件（helmet_detection2.yml 对应的模型配置）
+# CONFIG_PATH = DEIMV2_ROOT / "configs" / "deimv2" / "deimv2_hgnetv2_atto_helmet_cpu2.yml"
 
+# # 模型权重（优先使用 best_stg1.pth）
+MODEL_PATH = Path(r"D:\AI\Git\DEIMv2\outputs\deimv2_hgnetv2_atto_helmet_cpu_highprec\best_stg1.pth")
 # 配置文件（helmet_detection2.yml 对应的模型配置）
-CONFIG_PATH = DEIMV2_ROOT / "configs" / "deimv2" / "deimv2_hgnetv2_atto_helmet_cpu2.yml"
+CONFIG_PATH = DEIMV2_ROOT / "configs" / "deimv2" / "deimv2_hgnetv2_atto_helmet_cpu_highprec.yml"
 
 # 验证集图片目录 & COCO 标注文件（用于计算精度）
-VAL_IMG_DIR  = Path(r"D:\AI\Dataset\20250731-ppe2286y\valid\images")
-VAL_ANN_FILE = Path(r"D:\AI\Dataset\20250731-ppe2286y\valid\_annotations.coco.json")
+VAL_IMG_DIR  = Path(r"D:\AI\Datasets\20250731-ppe2286y\valid\images")
+VAL_ANN_FILE = Path(r"D:\AI\Datasets\20250731-ppe2286y\valid\_annotations.coco.json")
 
 # 训练集图片目录（随机抽样可视化用）
-TRAIN_IMG_DIR = Path(r"D:\AI\Dataset\syperson")
+TRAIN_IMG_DIR = Path(r"D:\AI\Datasets\syperson")
 
 # 结果输出目录
 OUTPUT_DIR = DEIMV2_ROOT / "test_results"
 
 # ──────────────────────────────────── 超参数 ──────────────────────────────────────
-CONF_THRESHOLD  = 0.40   # 置信度阈值（可视化 & TP 判断）
-IOU_THRESHOLD   = 0.50   # IOU 阈值（TP 计算用）
-NUM_SAMPLE_IMGS = 18      # 从训练集随机抽取用于可视化的图片数量
+IOU_THRESHOLD   = 0.00   # IOU 阈值（TP 计算用）
+NUM_SAMPLE_IMGS = 18     # 从训练集随机抽取用于可视化的图片数量
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
-# 类别名称 & 颜色
-CLASSES = {0: "戴头盔", 1: "未戴头盔", 2: "未穿马甲", 3: "穿马甲"}
-COLORS  = {0: "#00CC44", 1: "#FF3333", 2: "#FF8C00", 3: "#3399FF"}
+# ──────────────────────── 分类检测配置（按类别独立开关和阈值）─────────────────────────
+#   enabled:   是否启用该类别的检测
+#   threshold: 该类别的置信度阈值
+#
+# 头盔检测
+HELMET_ENABLED   = True
+HELMET_THRESHOLD = 0.40
+# 马甲检测
+VEST_ENABLED     = True
+VEST_THRESHOLD   = 0.40
+
+# 类别名称 / 颜色 / 检测配置（自动从上面的开关和阈值生成）
+CLASS_CONFIG = {
+    0: {"name": "戴头盔",  "color": "#00CC44", "enabled": HELMET_ENABLED, "threshold": HELMET_THRESHOLD},
+    1: {"name": "未戴头盔", "color": "#FF3333", "enabled": HELMET_ENABLED, "threshold": HELMET_THRESHOLD},
+    2: {"name": "未穿马甲", "color": "#FF8C00", "enabled": VEST_ENABLED,   "threshold": VEST_THRESHOLD},
+    3: {"name": "穿马甲",  "color": "#3399FF", "enabled": VEST_ENABLED,   "threshold": VEST_THRESHOLD},
+}
+
+# 向后兼容：保留 CLASSES / COLORS 方便其他地方引用
+CLASSES = {k: v["name"]  for k, v in CLASS_CONFIG.items()}
+COLORS  = {k: v["color"] for k, v in CLASS_CONFIG.items()}
 
 # ─────────────────────────────────── 辅助工具 ─────────────────────────────────────
+
+def is_class_enabled(cls_id):
+    """判断某个类别是否启用检测"""
+    cfg = CLASS_CONFIG.get(int(cls_id))
+    return cfg is not None and cfg["enabled"]
+
+
+def get_class_threshold(cls_id):
+    """获取某个类别的置信度阈值"""
+    cfg = CLASS_CONFIG.get(int(cls_id))
+    return cfg["threshold"] if cfg else 0.5
+
+
+def filter_by_class_config(labels, boxes, scores):
+    """按各类别的 enabled 和 threshold 过滤检测结果"""
+    keep = []
+    for i in range(len(labels)):
+        cls_id = int(labels[i].item())
+        if is_class_enabled(cls_id) and float(scores[i]) >= get_class_threshold(cls_id):
+            keep.append(i)
+    if not keep:
+        return labels[:0], boxes[:0], scores[:0]
+    import torch as _t
+    idx = _t.tensor(keep, dtype=_t.long)
+    return labels[idx], boxes[idx], scores[idx]
+
 
 def iou(box_a, box_b):
     """计算两个 [x1,y1,x2,y2] 框的 IoU"""
@@ -134,7 +182,7 @@ def infer(model, img_pil, eval_size, vit_backbone, device):
     return labels[0].cpu(), boxes[0].cpu(), scores[0].cpu()
 
 
-def draw_result(img_pil, labels, boxes, scores, threshold=CONF_THRESHOLD):
+def draw_result(img_pil, labels, boxes, scores):
     """在图上绘制检测框，返回新 PIL Image"""
     img = img_pil.copy()
     draw = ImageDraw.Draw(img)
@@ -156,9 +204,10 @@ def draw_result(img_pil, labels, boxes, scores, threshold=CONF_THRESHOLD):
     if font is None:
         font = ImageFont.load_default()
 
+    # 先按分类配置过滤
+    labels, boxes, scores = filter_by_class_config(labels, boxes, scores)
+
     for label, box, score in zip(labels, boxes, scores):
-        if score < threshold:
-            continue
         cls_id   = int(label.item())
         cls_name = CLASSES.get(cls_id, f"cls{cls_id}")
         color    = COLORS.get(cls_id, "#FFFFFF")
@@ -203,12 +252,9 @@ def run_visual_test(model, eval_size, vit_backbone):
         labels, boxes, scores = infer(model, img_pil, eval_size, vit_backbone, DEVICE)
         elapsed = time.time() - t0
 
-        # 过滤低置信度
-        mask = scores >= CONF_THRESHOLD
-        det_labels = labels[mask]
-        det_boxes  = boxes[mask]
-        det_scores = scores[mask]
-        n_det = int(mask.sum())
+        # 按分类配置过滤
+        det_labels, det_boxes, det_scores = filter_by_class_config(labels, boxes, scores)
+        n_det = len(det_labels)
         total_dets += n_det
 
         for lbl, scr in zip(det_labels, det_scores):
@@ -245,7 +291,13 @@ def run_accuracy_eval(model, eval_size, vit_backbone):
     print(f"\n[INFO] 开始在验证集上评估精度…")
     print(f"       标注文件: {VAL_ANN_FILE}")
     print(f"       图片目录: {VAL_IMG_DIR}")
-    print(f"       IoU阈值={IOU_THRESHOLD}  置信度阈值={CONF_THRESHOLD}\n")
+    enabled_classes = [f"{v['name']}(≥{v['threshold']})" for v in CLASS_CONFIG.values() if v['enabled']]
+    disabled_classes = [v['name'] for v in CLASS_CONFIG.values() if not v['enabled']]
+    print(f"       IoU阈值={IOU_THRESHOLD}")
+    print(f"       启用检测: {', '.join(enabled_classes)}")
+    if disabled_classes:
+        print(f"       已禁用:   {', '.join(disabled_classes)}")
+    print()
 
     with open(VAL_ANN_FILE, "r", encoding="utf-8") as f:
         coco = json.load(f)
@@ -287,18 +339,16 @@ def run_accuracy_eval(model, eval_size, vit_backbone):
         pred_labels, pred_boxes, pred_scores = infer(
             model, img_pil, eval_size, vit_backbone, DEVICE)
 
-        # 过滤低置信度预测
-        mask = pred_scores >= CONF_THRESHOLD
-        pred_labels = pred_labels[mask]
-        pred_boxes  = pred_boxes[mask]   # [x1,y1,x2,y2]
-        pred_scores = pred_scores[mask]
+        # 按分类配置过滤
+        pred_labels, pred_boxes, pred_scores = filter_by_class_config(
+            pred_labels, pred_boxes, pred_scores)
 
         # 整理 GT
         gts = gt_map.get(img_id, [])
         gt_boxes_by_cls = defaultdict(list)
         for ann in gts:
             cls_id = cat2cls.get(ann["category_id"], -1)
-            if cls_id < 0:
+            if cls_id < 0 or not is_class_enabled(cls_id):
                 continue
             bx, by, bw, bh = ann["bbox"]
             gt_boxes_by_cls[cls_id].append([bx, by, bx + bw, by + bh])
@@ -335,25 +385,29 @@ def run_accuracy_eval(model, eval_size, vit_backbone):
 
     # 汇总打印
     print("\n" + "=" * 60)
-    print(f"  验证集精度报告  (IoU@{IOU_THRESHOLD}, conf≥{CONF_THRESHOLD})")
+    print(f"  验证集精度报告  (IoU@{IOU_THRESHOLD})")
     print("=" * 60)
-    fmt = "{:12s}  {:6s}  {:6s}  {:6s}  {:5s}  {:5s}  {:5s}"
-    print(fmt.format("类别", "TP", "FP", "FN", "Prec", "Rec", "F1"))
+    fmt = "{:12s}  {:6s}  {:6s}  {:6s}  {:5s}  {:5s}  {:5s}  {:5s}"
+    print(fmt.format("类别", "TP", "FP", "FN", "Prec", "Rec", "F1", "阈值"))
     print("-" * 60)
 
     all_ap = []
-    for cls_id, cls_name in CLASSES.items():
+    for cls_id, cfg in CLASS_CONFIG.items():
+        if not cfg["enabled"]:
+            continue
+        cls_name = cfg["name"]
         tp = tp_count.get(cls_id, 0)
         fp = fp_count.get(cls_id, 0)
         fn = fn_count.get(cls_id, 0)
         prec = tp / (tp + fp) if (tp + fp) > 0 else 0.0
         rec  = tp / (tp + fn) if (tp + fn) > 0 else 0.0
         f1   = 2*prec*rec / (prec+rec) if (prec+rec) > 0 else 0.0
-        all_ap.append(f1)   # 简易近似 AP = F1
+        all_ap.append(f1)
         print(fmt.format(
             cls_name,
             str(tp), str(fp), str(fn),
-            f"{prec:.3f}", f"{rec:.3f}", f"{f1:.3f}"
+            f"{prec:.3f}", f"{rec:.3f}", f"{f1:.3f}",
+            f"{cfg['threshold']}"
         ))
 
     map50 = sum(all_ap) / len(all_ap) if all_ap else 0.0
