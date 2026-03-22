@@ -1,0 +1,25 @@
+task: detection
+
+num_classes: 4  # Helmet, NoHelmet, NoVest, Vest
+
+train_dataloader:
+  type: DataLoader
+  dataset:
+    type: CocoDetection
+    img_folder: D:/AI/Datasets/Dataset of Personal Protective Equipment (PPE)/20250731-ppe2286y/train/images
+    ann_file: D:/AI/Datasets/Dataset of Personal Protective Equipment (PPE)/20250731-ppe2286y/train/_annotations.coco.json
+    return_masks: False
+  shuffle: True
+  num_workers: 2
+  drop_last: True
+
+val_dataloader:
+  type: DataLoader
+  dataset:
+    type: CocoDetection
+    img_folder: D:/AI/Datasets/Dataset of Personal Protective Equipment (PPE)/20250731-ppe2286y/valid/images
+    ann_file: D:/AI/Datasets/Dataset of Personal Protective Equipment (PPE)/20250731-ppe2286y/valid/_annotations.coco.json
+    return_masks: False
+  shuffle: False
+  num_workers: 2
+  drop_last: False
