@@ -34,7 +34,7 @@ DEIMV2_ROOT = Path(__file__).resolve().parent
 # CONFIG_PATH = DEIMV2_ROOT / "configs" / "deimv2" / "deimv2_hgnetv2_atto_helmet_cpu2.yml"
 
 # # 模型权重（优先使用 best_stg1.pth）
-MODEL_PATH = Path(r"D:\AI\Git\DEIMv2\outputs\deimv2_hgnetv2_atto_helmet_cpu_highprec\best_stg1.pth")
+MODEL_PATH = Path(r"D:\AI\Git\DEIMv2\outputs\deimv2_hgnetv2_atto_helmet_cpu_highprec\best_stg2.pth")
 # 配置文件（helmet_detection2.yml 对应的模型配置）
 CONFIG_PATH = DEIMV2_ROOT / "configs" / "deimv2" / "deimv2_hgnetv2_atto_helmet_cpu_highprec.yml"
 
