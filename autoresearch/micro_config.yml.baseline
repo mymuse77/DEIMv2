@@ -1,0 +1,194 @@
+# =============================================================================
+# DeimV2 AutoResearch - 微型训练配置
+# =============================================================================
+# 本文件是 AI Agent 唯一允许修改的配置文件。
+# 它继承自 helmet_4090 配置，但将 epoch 缩减到极小值以实现快速迭代。
+#
+# AI 可调参数区域标记为 [TUNABLE]
+# AI 禁止修改的区域标记为 [FIXED]
+# =============================================================================
+
+__include__:
+  - '../configs/dataset/helmet_detection2_gpu.yml'
+  - '../configs/runtime.yml'
+
+# [FIXED] 基础任务配置
+task: detection
+model: DEIM
+criterion: DEIMCriterion
+postprocessor: PostProcessor
+use_focal_loss: True
+output_dir: ./autoresearch/outputs/current_run
+
+# =============================================================================
+# [TUNABLE] 训练周期配置
+# =============================================================================
+epoches: 5                  # 微型实验：5 epoch（约 15~30 分钟）
+flat_epoch: 2               # FlatCosine LR 的平坦期
+no_aug_epoch: 1             # 无增强 epoch
+checkpoint_freq: 1          # 每 epoch 保存一次
+
+# [TUNABLE] 学习率调度器
+lrsheduler: flatcosine
+lr_gamma: 0.5
+warmup_iter: 200
+
+# [FIXED] 评估分辨率
+eval_spatial_size: [640, 640]
+
+# =============================================================================
+# [FIXED] 模型组件声明
+# =============================================================================
+DEIM:
+  backbone: HGNetv2
+  encoder: HybridEncoder
+  decoder: DEIMTransformer
+
+# =============================================================================
+# [TUNABLE] Backbone 配置
+# =============================================================================
+HGNetv2:
+  name: 'B5'
+  return_idx: [1, 2, 3]
+  freeze_at: -1              # [TUNABLE] -1=不冻结, 0=冻结stem, 1+=冻结更多层
+  freeze_stem_only: True     # [TUNABLE]
+  freeze_norm: False         # [TUNABLE]
+  pretrained: True           # [FIXED] 必须使用预训练权重
+  local_model_dir: './weight/hgnetv2/'
+  use_lab: True
+
+# =============================================================================
+# [TUNABLE] Hybrid Encoder 配置
+# =============================================================================
+HybridEncoder:
+  in_channels: [512, 1024, 2048]   # [FIXED] 与 backbone 输出对齐
+  feat_strides: [8, 16, 32]        # [FIXED]
+  hidden_dim: 384                   # [TUNABLE] 编码器隐藏维度
+  use_encoder_idx: [2]              # [TUNABLE] 使用 transformer 的特征层索引
+  num_encoder_layers: 1             # [TUNABLE] transformer encoder 层数
+  nhead: 8                          # [TUNABLE] 注意力头数
+  dim_feedforward: 2048             # [TUNABLE] FFN 维度
+  dropout: 0.0                      # [TUNABLE]
+  enc_act: 'gelu'                   # [TUNABLE] 可选: gelu, relu, silu
+  expansion: 1.0                    # [TUNABLE]
+  depth_mult: 1.0                   # [TUNABLE]
+  act: 'silu'                       # [TUNABLE] 可选: silu, relu, gelu
+  version: 'deim'
+  csp_type: 'csp2'
+  fuse_op: 'sum'                    # [TUNABLE] 可选: sum, concat
+
+# =============================================================================
+# [TUNABLE] DEIM Transformer Decoder 配置
+# =============================================================================
+DEIMTransformer:
+  feat_channels: [384, 384, 384]    # [FIXED] 与 encoder hidden_dim 对齐
+  feat_strides: [8, 16, 32]        # [FIXED]
+  hidden_dim: 384                   # [FIXED] 与 encoder hidden_dim 对齐
+  num_levels: 3                     # [FIXED]
+  num_layers: 6                     # [TUNABLE] decoder 层数
+  eval_idx: -1
+  num_queries: 300                  # [TUNABLE] query 数量
+  num_denoising: 100                # [TUNABLE] 去噪 query 数量
+  label_noise_ratio: 0.5            # [TUNABLE]
+  box_noise_scale: 1.0              # [TUNABLE]
+  reg_max: 32                       # [TUNABLE]
+  reg_scale: 8                      # [TUNABLE]
+  layer_scale: 1                    # [TUNABLE]
+  num_points: [3, 6, 3]             # [TUNABLE] 采样点数
+  cross_attn_method: 'default'      # [TUNABLE] 可选: default, discrete
+  query_select_method: 'default'    # [TUNABLE] 可选: default, agnostic
+  activation: 'silu'                # [TUNABLE]
+  mlp_act: 'silu'                   # [TUNABLE]
+  dim_feedforward: 2048             # [TUNABLE]
+  eval_spatial_size: [640, 640]
+
+# =============================================================================
+# [FIXED] 后处理
+# =============================================================================
+PostProcessor:
+  num_top_queries: 300
+
+# =============================================================================
+# [TUNABLE] 混合精度与 EMA
+# =============================================================================
+use_amp: True
+scaler:
+  type: GradScaler
+  enabled: True
+
+use_ema: True
+ema:
+  type: ModelEMA
+  decay: 0.9999                     # [TUNABLE] EMA 衰减率
+  warmups: 2000                     # [TUNABLE] EMA 预热步数
+
+# =============================================================================
+# [TUNABLE] 优化器配置
+# =============================================================================
+optimizer:
+  type: AdamW
+  params:
+    - params: '^(?=.*backbone)(?!.*norm|bn).*$'
+      lr: 0.00001                   # [TUNABLE] backbone 学习率
+    - params: '^(?=.*backbone)(?=.*norm|bn).*$'
+      lr: 0.00001                   # [TUNABLE] backbone norm 学习率
+      weight_decay: 0.
+    - params: '^(?=.*(?:encoder|decoder))(?=.*(?:norm|bn|bias)).*$'
+      weight_decay: 0.
+  lr: 0.0002                       # [TUNABLE] 全局学习率
+  betas: [0.9, 0.999]              # [TUNABLE]
+  weight_decay: 0.0001              # [TUNABLE]
+
+# =============================================================================
+# [TUNABLE] Loss 权重配置 (核心调参区)
+# =============================================================================
+DEIMCriterion:
+  weight_dict: {loss_mal: 1, loss_bbox: 5, loss_giou: 2, loss_fgl: 0.15, loss_ddf: 1.5}
+  losses: ['mal', 'boxes', 'local']
+  gamma: 1.5                        # [TUNABLE] Focal loss gamma
+  alpha: 0.75                       # [TUNABLE] Focal loss alpha
+  reg_max: 32
+  matcher:
+    type: HungarianMatcher
+    weight_dict: {cost_class: 2, cost_bbox: 5, cost_giou: 2}   # [TUNABLE]
+    alpha: 0.25                     # [TUNABLE]
+    gamma: 2.0                      # [TUNABLE]
+    change_matcher: True
+    iou_order_alpha: 4.0            # [TUNABLE]
+    matcher_change_epoch: 4         # 缩减为适配微型训练
+
+# =============================================================================
+# [TUNABLE] 数据增强配置
+# =============================================================================
+train_dataloader:
+  dataset:
+    transforms:
+      ops:
+        - {type: Mosaic, output_size: 320, rotation_range: 10, translation_range: [0.1, 0.1], scaling_range: [0.5, 1.5],
+           probability: 1.0, fill_value: 0, use_cache: True, max_cached_images: 50, random_pop: True}
+        - {type: RandomPhotometricDistort, p: 0.5}
+        - {type: RandomZoomOut, fill: 0}
+        - {type: RandomIoUCrop, p: 0.8}
+        - {type: SanitizeBoundingBoxes, min_size: 1}
+        - {type: RandomHorizontalFlip}
+        - {type: Resize, size: [640, 640]}
+        - {type: SanitizeBoundingBoxes, min_size: 1}
+        - {type: ConvertPILImage, dtype: 'float32', scale: True}
+        - {type: ConvertBoxes, fmt: 'cxcywh', normalize: True}
+      policy:
+        epoch: [2, 3, 4]            # 按比例缩减
+        ops: ['Mosaic', 'RandomPhotometricDistort', 'RandomZoomOut', 'RandomIoUCrop']
+      mosaic_prob: 0.5               # [TUNABLE]
+  collate_fn:
+    mixup_prob: 0.5                  # [TUNABLE]
+    mixup_epochs: [2, 3]             # 按比例缩减
+    stop_epoch: 4                    # 按比例缩减
+    copyblend_prob: 0.5              # [TUNABLE]
+    copyblend_epochs: [2, 4]         # 按比例缩减
+    area_threshold: 100
+    num_objects: 3
+    with_expand: True
+    expand_ratios: [0.1, 0.25]
+    ema_restart_decay: 0.9998
+    base_size: 640
+    base_size_repeat: 3
