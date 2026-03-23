@@ -1,0 +1,20 @@
+{
+  "timestamp": "2026-03-22 11:54:23",
+  "model_path": "D:\\AI\\Git\\DEIMv2\\outputs\\deimv2_hgnetv2_atto_helmet_gpu_3060\\best_stg1.pth",
+  "config_path": "D:\\AI\\Git\\DEIMv2\\configs\\deimv2\\deimv2_hgnetv2_atto_helmet_cpu2.yml",
+  "input_dir": "D:\\AI\\Datasets\\sy-person",
+  "output_dir": "./output_safety_helmet_detection",
+  "confidence_threshold": 0.03,
+  "statistics": {
+    "total_images": 84,
+    "total_detections": 1106,
+    "helmet_count": 594,
+    "no_helmet_count": 512
+  },
+  "class_names": {
+    "0": "Person",
+    "1": "Helmet",
+    "2": "NOHelmet"
+  },
+  "device": "cpu"
+}
