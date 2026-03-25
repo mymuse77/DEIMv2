@@ -12,8 +12,8 @@ train_dataloader:
   type: DataLoader
   dataset:
     type: CocoDetection
-    img_folder: D:\AI\Dataset\20250731-ppe2286y\train\images
-    ann_file: D:\AI\Dataset\20250731-ppe2286y\train\_annotations.coco.json
+    img_folder: D:\AI\Datasets\20250731-ppe2286y\train\images
+    ann_file: D:\AI\Datasets\20250731-ppe2286y\train\_annotations.coco.json
     return_masks: False
     transforms:
       type: Compose
@@ -57,8 +57,8 @@ val_dataloader:
   type: DataLoader
   dataset:
     type: CocoDetection
-    img_folder: D:\AI\Dataset\20250731-ppe2286y\valid\images
-    ann_file: D:\AI\Dataset\20250731-ppe2286y\valid\_annotations.coco.json
+    img_folder: D:\AI\Datasets\20250731-ppe2286y\valid\images
+    ann_file: D:\AI\Datasets\20250731-ppe2286y\valid\_annotations.coco.json
     return_masks: False
     transforms:
       type: Compose

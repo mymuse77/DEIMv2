@@ -16,6 +16,7 @@ import sys
 import random
 import json
 import time
+import argparse
 from pathlib import Path
 from collections import defaultdict
 
@@ -319,6 +320,70 @@ def run_visual_test(model, eval_size, vit_backbone):
     print("=" * 60)
 
 
+def run_custom_images_test(model, eval_size, vit_backbone, image_paths):
+    """对用户指定的图片列表进行推理并可视化"""
+    OUTPUT_DIR.mkdir(exist_ok=True)
+    print(f"\n[INFO] 开始对指定的 {len(image_paths)} 张图片进行推理…\n")
+
+    total_dets = 0
+    cls_count = defaultdict(int)
+
+    # 过滤掉不存在的路径
+    valid_paths = []
+    for p in image_paths:
+        path = Path(p.strip())
+        if path.exists():
+            valid_paths.append(path)
+        else:
+            print(f"[WARN] 图片不存在，跳过: {path}")
+
+    if not valid_paths:
+        print("[ERROR] 没有有效的图片路径可供测试")
+        return
+
+    for i, img_path in enumerate(valid_paths, 1):
+        t0 = time.time()
+        try:
+            img_pil = Image.open(img_path).convert("RGB")
+        except Exception as e:
+            print(f"[ERROR] 无法打开图片 {img_path}: {e}")
+            continue
+
+        labels, boxes, scores = infer(model, img_pil, eval_size, vit_backbone, DEVICE)
+        elapsed = time.time() - t0
+
+        # 按分类配置过滤
+        det_labels, det_boxes, det_scores = filter_by_class_config(
+            labels, boxes, scores
+        )
+        n_det = len(det_labels)
+        total_dets += n_det
+
+        for lbl, scr in zip(det_labels, det_scores):
+            cls_count[CLASSES.get(int(lbl.item()), f"cls{int(lbl)}")] += 1
+
+        result_img = draw_result(img_pil, labels, boxes, scores)
+        out_path = OUTPUT_DIR / f"custom_{i:02d}_{img_path.name}"
+        result_img.save(str(out_path))
+
+        print(f"  [{i:02d}/{len(valid_paths)}] {img_path.name}")
+        print(f"         检测目标: {n_det} 个  |  耗时: {elapsed * 1000:.1f}ms")
+        for lbl, box, scr in zip(det_labels, det_boxes, det_scores):
+            cls_name = CLASSES.get(int(lbl.item()), f"cls{int(lbl)}")
+            print(
+                f"           → {cls_name:10s}  置信度={scr:.3f}  "
+                f"框=[{box[0]:.0f},{box[1]:.0f},{box[2]:.0f},{box[3]:.0f}]"
+            )
+        print(f"         结果保存: {out_path.name}\n")
+
+    print("=" * 60)
+    print(f"  自定义图片测试汇总  |  共检测到 {total_dets} 个目标")
+    for cls_name, cnt in sorted(cls_count.items()):
+        print(f"    {cls_name:12s}: {cnt} 个")
+    print(f"  结果图片已保存至: {OUTPUT_DIR}")
+    print("=" * 60)
+
+
 # ──────────────────────────────── 精度验证（验证集 COCO） ────────────────────────────
 
 
@@ -472,6 +537,12 @@ def run_accuracy_eval(model, eval_size, vit_backbone):
 
 
 def main():
+    parser = argparse.ArgumentParser(description="DEIMv2 安全帽检测模型测试脚本")
+    parser.add_argument(
+        "--images", type=str, help="指定要测试的图片路径，多个路径用逗号分割"
+    )
+    args = parser.parse_args()
+
     print("\n" + "=" * 60)
     print("  DEIMv2 HGNetv2-Atto 安全帽/马甲 检测模型 — 准确性验证")
     print("=" * 60)
@@ -489,11 +560,17 @@ def main():
 
     model, eval_size, vit_backbone = load_model(CONFIG_PATH, MODEL_PATH, DEVICE)
 
-    # 第一步：可视化（训练集随机抽样）
-    run_visual_test(model, eval_size, vit_backbone)
+    if args.images:
+        # 如果指定了图片路径，则只对指定图片进行推理
+        image_paths = args.images.split(",")
+        run_custom_images_test(model, eval_size, vit_backbone, image_paths)
+    else:
+        # 否则运行默认的流程：随机抽插可视化 + 精度评估
+        # 第一步：可视化（训练集随机抽样）
+        run_visual_test(model, eval_size, vit_backbone)
 
-    # 第二步：精度评估（验证集）
-    run_accuracy_eval(model, eval_size, vit_backbone)
+        # 第二步：精度评估（验证集）
+        run_accuracy_eval(model, eval_size, vit_backbone)
 
     print("\n[DONE] 全部测试完成！")
 
